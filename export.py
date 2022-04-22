@@ -84,30 +84,13 @@ def main():
     # load device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # load model
-    sf=SaliencyInferer("CAM","conv_final.0")
     pretrained_dir = args.pretrained_dir
     model_name = args.pretrained_model_name
     pretrained_pth = os.path.join(pretrained_dir, model_name)
     model=torch.load(pretrained_pth)
     for index ,(name, param) in enumerate(model.named_parameters()):
         print( str(index) + " " +name)
-    '''model = UNETR(
-            in_channels=args.in_channels,
-            out_channels=args.out_channels,
-            img_size=(args.roi_x, args.roi_y, args.roi_z),
-            feature_size=args.feature_size,
-            hidden_size=args.hidden_size,
-            mlp_dim=args.mlp_dim,
-            num_heads=args.num_heads,
-            pos_embed=args.pos_embed,
-            norm_name=args.norm_name,
-            conv_block=True,
-            res_block=True,
-            dropout_rate=args.dropout_rate)'''
     inf_size = [args.roi_x, args.roi_y, args.roi_x]
-
-    '''model_dict = torch.load(os.path.join(pretrained_dir, args.pretrained_model_name))
-    model.load_state_dict(model_dict["state_dict"])'''
     model.eval()
     model.to(device)
     start_time = time.time()
@@ -123,14 +106,16 @@ def main():
                                                    4,
                                                    model,
                                                    overlap=args.infer_overlap)
-            
             path=img_name.split(".")[0]+args.pretrained_model_name.split(".")[0]+".nii.gz"
             # postprocess softmax->argmax
             val_outputs = torch.softmax(val_outputs, 1).cpu().numpy()
             val_outputs = np.argmax(val_outputs, axis=1).astype(np.uint8)
             val_labels = val_labels.cpu().numpy()[:, 0, :, :, :]
+            # change channel
             val_outputs = np.transpose(val_outputs, (0,3,1,2))
+            # fit array to (x,x,x)
             val_outputs = np.squeeze(val_outputs,0)
+            # convert & export. there you go.
             out = sitk.GetImageFromArray(val_outputs)
             sitk.WriteImage(out,path)
             torch.cuda.empty_cache()
