@@ -1,14 +1,3 @@
-# Copyright 2020 - 2021 MONAI Consortium
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#     http://www.apache.org/licenses/LICENSE-2.0
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 import os
 import torch
 import numpy as np
@@ -31,10 +20,10 @@ from utils.visualization import print_cut_samples,print_heatmap
 from utils.slide_saliency_inference import sliding_saliency_inference
 from monai.inferers import SaliencyInferer
 
-parser = argparse.ArgumentParser(description='UNETR segmentation pipeline')
+parser = argparse.ArgumentParser(description='Test pipeline')
 parser.add_argument('--pretrained_dir', default='./pretrained_models/', type=str, help='pretrained checkpoint directory')
 parser.add_argument('--data_dir', default='./dataset/', type=str, help='dataset directory')
-parser.add_argument('--json_list', default='dataset_0.json', type=str, help='dataset json file')
+parser.add_argument('--data_list', default='dataset_0.json', type=str, help='dataset json file')
 parser.add_argument('--save_img', default='test', type=str, help='image cut save file')
 parser.add_argument('--pretrained_model_name', default='UNETR_model_best_acc.pth', type=str, help='pretrained model name')
 parser.add_argument('--saved_checkpoint', default='ckpt', type=str, help='Supports torchscript or ckpt pretrained checkpoint type')
