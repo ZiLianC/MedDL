@@ -6,14 +6,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 import torch.utils.data.distributed
 from monai.inferers import sliding_window_inference
-from monai.losses import DiceLoss, DiceCELoss
-from monai.metrics import DiceMetric
-from monai.utils.enums import MetricReduction
-from monai.transforms import AsDiscrete,Activations,Compose
-from networks.unetr import UNETR
-from networks.TCMix import TCMix
-from monai.networks.nets import UNet
-from monai.networks.nets import SegResNet
+from monai.transforms import Compose
 from utils.data_utils import get_loader
 from trainer import run_training
 from optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
@@ -55,7 +48,7 @@ parser.add_argument('--momentum', default=0.99, type=float, help='momentum')
 
 # scheduler policy
 parser.add_argument('--lrschedule', default='warmup_cosine', type=str, help='type of learning rate scheduler')
-parser.add_argument('--warmup_epochs', default=50, type=int, help='number of warmup epochs')
+parser.add_argument('--warmup_epochs', default=5, type=int, help='number of warmup epochs')
 
 # distributed learning. NOTICE: models exported in this training method has minor difference when reloaded to test.
 parser.add_argument('--distributed', action='store_true', help='start distributed training')
@@ -141,8 +134,7 @@ def main_worker(gpu, args):
     
 
     # DEFINE MODELS HERE.
-    if args.model_name == 'unetr':
-        model = 
+    model = 
         
         # procedure for resume learning & finetuning & transfer learning
         if args.resume_ckpt:
@@ -238,8 +230,7 @@ def main_worker(gpu, args):
                             model_inferer=model_inferer,
                             scheduler=scheduler,
                             start_epoch=start_epoch,
-                            post_label=post_label,
-                            post_pred=post_pred)
+                            postprocess=postpress)
     return accuracy
 
 if __name__ == '__main__':

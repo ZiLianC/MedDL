@@ -21,39 +21,44 @@ Conda is recommended for a clean develop environment.
 
 ### Segmenatation [(View Trend)](https://paperswithcode.com/task/medical-image-segmentation)
 
-- 3D UNet [1] (with Deep Supervision [2])
-- H-DenseUNet [3]
-- UNETR [4]
-- SegResNet (with VAE) [5] [#TODO]
-- TCFuse # Under testing
+- [x] 3D UNet [1] (with Deep Supervision [2])
+- [ ] H-DenseUNet [3]
+- [x] UNETR [4]
+- [x] SegResNet (with VAE) [5] [#TODO]
+- [x] TCFuse # Under trials
 
 ### Classification [(View Trend)](https://paperswithcode.com/task/image-classification)
 
-- PoolFormer [6]
-- ConvNeXt [7]
-- ResNet-50 [8]
-- EfficientNetV2 [9]
+- [ ] PoolFormer [6]
+- [ ] ConvNeXt [7]
+- [ ] ResNet-50 [8]
+- [ ] EfficientNetV2 [9]
 
 ### Temporal Recoginition [(Related Field)](https://paperswithcode.com/task/weakly-supervised-temporal-action)
 
-- ResNet-50+LSTM
-- Supposed to have a transformer based method.. [#TODO]
+- [ ] ResNet-50+LSTM
+- [ ] Supposed to have a transformer based method.. [#TODO]
+
+### Utils Blocks
+
+- [ ] Bottleneck
+- [ ] STN
 
 ## Losses & Metrics
 
 ### Losses
 
-- Cross Entrophy
-- Dice Cross Entrophy
-- SupCon [10]
-- AdaCon [11]
-- [Others](https://docs.monai.io/en/stable/losses.html)
+- [ ] Cross Entrophy
+- [ ] Dice Cross Entrophy
+- [ ] SupCon [10]
+- [ ] AdaCon [11]
+- [ ] [Others](https://docs.monai.io/en/stable/losses.html)
 
 ### Metrics
 
-- DICE
-- ASD
-- [Others](https://docs.monai.io/en/stable/metrics.html)
+- [ ] DICE
+- [ ] ASD
+- [ ] [Others](https://docs.monai.io/en/stable/metrics.html)
 
 ## Optmizers & Schedulers
 
@@ -66,7 +71,7 @@ Conda is recommended for a clean develop environment.
 ### Schedulers
 
 - CosineAnnealing
-- WarmupCosineAnnealing
+- [ ] WarmupCosineAnnealing
 
 ## Data Preparation
 
@@ -115,7 +120,7 @@ Use test.py for testing/vis. pipeline.
 
 [8] He, Kaiming, et al. ‘Deep Residual Learning for Image Recognition’. ArXiv:1512.03385 [Cs], Dec. 2015. arXiv.org, http://arxiv.org/abs/1512.03385.
 
-[9] He, Kaiming, et al. ‘Deep Residual Learning for Image Recognition’. ArXiv:1512.03385 [Cs], Dec. 2015. arXiv.org, http://arxiv.org/abs/1512.03385.
+[9] Tan, Mingxing, and Quoc V. Le. ‘EfficientNetV2: Smaller Models and Faster Training’. ArXiv:2104.00298 [Cs], June 2021. arXiv.org, http://arxiv.org/abs/2104.00298.
 
 [10] Khosla, Prannay, et al. ‘Supervised Contrastive Learning’. ArXiv:2004.11362 [Cs, Stat], Mar. 2021. arXiv.org, http://arxiv.org/abs/2004.11362.
 

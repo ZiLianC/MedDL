@@ -6,85 +6,97 @@ class UNet(nn.Module):
     def __init__(self, in_channel=1, out_channel=2, training=True):
         super(UNet, self).__init__()
         self.training = training
-        self.encoder1 = nn.Conv3d(in_channel, 32, 3, stride=1, padding=1)  # b, 16, 10, 10
-        self.bn1=nn.BatchNorm3d(32)
-        self.encoder2=   nn.Conv3d(32, 64, 3, stride=1, padding=1)  # b, 8, 3, 3
-        self.bn2=nn.BatchNorm3d(64)
-        self.encoder3=   nn.Conv3d(64, 128, 3, stride=1, padding=1)
-        self.bn3=nn.BatchNorm3d(128)
-        self.encoder4=   nn.Conv3d(128, 256, 3, stride=1, padding=1)
-        self.bn4=nn.BatchNorm3d(256)
-        # self.encoder5=   nn.Conv3d(256, 512, 3, stride=1, padding=1)
+        self.convInit = nn.Conv3d(in_channel, 64, 3, stride=1, padding=1)
+        self.down_layers = self.make_down_layers(3)
+        self.up_layers = self.make_up_layers(3)
+        self.out_layers=self.make_out_map(256,4)
+        self.bottom = nn.Conv3d(512, 512, 3, stride=1, padding=1)
+    
+    def make_down_layers(self,down_layer_num):
+        down_layers = nn.ModuleList()
+        channels = 64
+        for i in range(down_layer_num):
+            down_layer = nn.Sequential(
+            nn.Conv3d(channels, channels*2, 3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv3d(channels*2, channels*2, 3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm3d(channels*2)
+            )
+            down_layers.append(down_layer)
+            channels = channels*2
+        return down_layers
         
-        # self.decoder1 = nn.Conv3d(512, 256, 3, stride=1,padding=1)  # b, 16, 5, 5
-        self.decoder2 =   nn.Conv3d(256, 128, 3, stride=1, padding=1)  # b, 8, 15, 1
-        self.decoder3 =   nn.Conv3d(128, 64, 3, stride=1, padding=1)  # b, 1, 28, 28
-        self.decoder4 =   nn.Conv3d(64, 32, 3, stride=1, padding=1)
-        self.decoder5 =   nn.Conv3d(32, 2, 3, stride=1, padding=1)
-        self.bn0=nn.BatchNorm3d(2)
+    
+    def make_up_layers(self,up_layer_num):
+        up_layers = nn.ModuleList()
+        channels = 512
+        for i in range(up_layer_num):
+            up_layer = nn.Sequential(
+            nn.Conv3d(channels, channels//2, 3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.Conv3d(channels//2, channels//2, 3, stride=1, padding=1),
+            nn.ReLU(),
+            nn.BatchNorm3d(channels//2))
+            up_layers.append(up_layer)
+            channels = channels//2
+        return up_layers
         
-        self.map4 = nn.Sequential(
-            nn.Conv3d(2, out_channel, 1, 1),
-            nn.Upsample(scale_factor=(1, 1, 1), mode='trilinear'),
+        
+    def make_out_map(self,feature_channel,up_layer_num):
+        out_layers=nn.ModuleList()
+        for i in range(up_layer_num):
+            out_layer = nn.Sequential(
+            nn.Conv3d(feature_channel,2, 1, 1),
+            nn.Upsample(scale_factor=(1, 1, 1), mode='trilinear',align_corners=True),
             nn.Softmax(dim =1)
-        )
-
-        # 128*128 尺度下的映射
-        self.map3 = nn.Sequential(
-            nn.Conv3d(64, out_channel, 1, 1),
-            nn.Upsample(scale_factor=(4, 4, 4), mode='trilinear'),
-            nn.Softmax(dim =1)
-        )
-
-        # 64*64 尺度下的映射
-        self.map2 = nn.Sequential(
-            nn.Conv3d(128, out_channel, 1, 1),
-            nn.Upsample(scale_factor=(8, 8, 8), mode='trilinear'),
-            nn.Softmax(dim =1)
-        )
-
-        # 32*32 尺度下的映射
-        self.map1 = nn.Sequential(
-            nn.Conv3d(256, out_channel, 1, 1),
-            nn.Upsample(scale_factor=(16, 16, 16), mode='trilinear'),
-            nn.Softmax(dim =1)
-        )
-
+            )
+            out_layers.append(out_layer)
+            feature_channel = feature_channel//2
+        return out_layers
+        
+        
+    def encoder(self,x):
+        x = self.convInit(x)
+        down_x = []
+        for i in range(len(self.down_layers)):
+            x = self.down_layers[i](x)
+            down_x.append(x)
+            x = F.max_pool3d(x,2,2)
+        x= self.bottom(x)
+        return x, down_x
+    
+    def decoder(self,x,down_x):
+        up_x=[]
+        for i, up in enumerate(self.up_layers):
+            x = F.interpolate(x,scale_factor=(2,2,2),mode='trilinear',align_corners=True) + down_x[i]
+            x=up(x)
+            up_x.append(x)
+        return x,up_x
+    
+    
     def forward(self, x):
-        
-        out = F.max_pool3d(self.bn1(F.relu(self.encoder1(x))),2,2)
-        t1 = out
-        out = F.max_pool3d(self.bn2(F.relu(self.encoder2(out))),2,2)
-        t2 = out
-        out = F.max_pool3d(self.bn3(F.relu(self.encoder3(out))),2,2)
-        t3 = out
-        out = F.max_pool3d(self.bn4(F.relu(self.encoder4(out))),2,2)
-        # t4 = out
-        # out = F.relu(F.max_pool3d(self.encoder5(out),2,2))
-        
-        # t2 = out
-        # out = F.relu(F.interpolate(self.decoder1(out),scale_factor=(2,2,2),mode ='trilinear'))
-        # print(out.shape,t4.shape)
-        output1 = self.map1(out)
-        out = F.interpolate(self.bn3(F.relu(self.decoder2(out))),scale_factor=(2,2,2),mode ='trilinear')
-        out = torch.add(out,t3)
-        output2 = self.map2(out)
-        out = F.interpolate(self.bn2(F.relu(self.decoder3(out))),scale_factor=(2,2,2),mode ='trilinear')
-        out = torch.add(out,t2)
-        output3 = self.map3(out)
-        out = F.interpolate(self.bn1(F.relu(self.decoder4(out))),scale_factor=(2,2,2),mode ='trilinear')
-        out = torch.add(out,t1)
-        
-        out = F.interpolate(self.bn0(F.relu(self.decoder5(out))),scale_factor=(2,2,2),mode ='trilinear')
-        output4 = self.map4(out)
-        # print(out.shape)
-        # print(output1.shape,output2.shape,output3.shape,output4.shape)
+        x,down_x=self.encoder(x)
+        down_x.reverse()
+        x,up_features=self.decoder(x,down_x)
+        up_outs=[]
+        for i,up in enumerate(up_features):
+            up_outs.append(self.out_layers[i](up))
         if self.training is True:
-            return output1, output2, output3, output4
+            return up_outs # last one is the highest stack
         else:
-            return output4
+            return x
+            
+
 if __name__ =='__main__':
     device = torch.device('cuda')
     model=UNet().to(device)
-    dummy=torch.randn(1, 1, 48, 512,512).float().to(device)
-    model(dummy)
+    dummy=torch.randn(1, 1, 64,64,64).float().to(device)
+    x=model(dummy)
+    print(x[0].shape)
+    
+    
+    
+    
+    
+    
