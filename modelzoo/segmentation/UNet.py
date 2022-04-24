@@ -18,10 +18,10 @@ class UNet(nn.Module):
         for i in range(down_layer_num):
             down_layer = nn.Sequential(
             nn.Conv3d(channels, channels*2, 3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.BatchNorm3d(channels*2),
             nn.Conv3d(channels*2, channels*2, 3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.BatchNorm3d(channels*2)
+            nn.BatchNorm3d(channels*2),
+            nn.ReLU()
             )
             down_layers.append(down_layer)
             channels = channels*2
@@ -34,10 +34,11 @@ class UNet(nn.Module):
         for i in range(up_layer_num):
             up_layer = nn.Sequential(
             nn.Conv3d(channels, channels//2, 3, stride=1, padding=1),
-            nn.ReLU(),
+            nn.BatchNorm3d(channels//2),
             nn.Conv3d(channels//2, channels//2, 3, stride=1, padding=1),
-            nn.ReLU(),
-            nn.BatchNorm3d(channels//2))
+            nn.BatchNorm3d(channels//2),
+            nn.ReLU()
+            )
             up_layers.append(up_layer)
             channels = channels//2
         return up_layers

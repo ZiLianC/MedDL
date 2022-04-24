@@ -1,5 +1,9 @@
-# Overview
-This repository aims for fast cross-task, cross-model implementation framework with decoupled & flexible modules. Templates are provided for basic pipelines such as training, testing, exporting models & results, and visualization. Minor accomondations are needed when using templates. Distributed learning and transfer learning workflows are also demonstrated in templates.
+
+# MedDL -- Implementations All In One
+
+## Overview
+
+This repository aims for fast cross-task, cross-model implementation framework with decoupled & flexible modules. It can give you a quick start. Templates are provided for basic pipelines such as training, testing, exporting models & results, and visualization. Minor accomondations are needed when using templates. Distributed learning and transfer learning workflows are also demonstrated in templates. Hope it can ultimately become the Timm in Medical DL.
 
 I'm also build a model zoo of my own for reliable implementations of network when joining contest, and I'm trying to be a network architect:). Fork this if you like and welcome to contribute models. Issues and PRs are welcomed.
 
@@ -29,35 +33,34 @@ Conda is recommended for a clean develop environment.
 
 ### Classification [(View Trend)](https://paperswithcode.com/task/image-classification)
 
-- [ ] PoolFormer [6]
-- [ ] ConvNeXt [7]
-- [ ] ResNet-50 [8]
-- [ ] EfficientNetV2 [9]
+- [x] PoolFormer [6]
+- [x] ConvNeXt [7]
+- [x] ResNet-50 [8]
 
 ### Temporal Recoginition [(Related Field)](https://paperswithcode.com/task/weakly-supervised-temporal-action)
 
-- [ ] ResNet-50+LSTM
+- [x] ResNet-50+LSTM
 - [ ] Supposed to have a transformer based method.. [#TODO]
 
 ### Utils Blocks
 
-- [ ] Bottleneck
-- [ ] STN
+- [x] Bottleneck
+
 
 ## Losses & Metrics
 
 ### Losses
 
-- [ ] Cross Entrophy
-- [ ] Dice Cross Entrophy
-- [ ] SupCon [10]
-- [ ] AdaCon [11]
-- [ ] [Others](https://docs.monai.io/en/stable/losses.html)
+- [x] Cross Entrophy
+- [x] Dice Cross Entrophy
+- [x] SupCon [10]
+- [ ] AdaCon [11] [#TODO] [For regression use. The key is the adaptive margin. So how to implement the adaptive margin in discrete target is a problem.]
+-  [Others](https://docs.monai.io/en/stable/losses.html)
 
 ### Metrics
 
-- [ ] DICE
-- [ ] ASD
+- [x] DICE
+- [x] ASD
 - [ ] [Others](https://docs.monai.io/en/stable/metrics.html)
 
 ## Optmizers & Schedulers
@@ -81,6 +84,14 @@ The [dataset](./dataset) directory implements Dataloader for:
 - .nii Files
 - Classification Datasets in a directory style
 - [#TODO] Loading Detection Datasets..
+
+## Visualization
+
+Use Tensorboard.
+
+``` bash
+tensorboard --logdir "./runs" --bind_all
+```
 
 ## Usage
 
