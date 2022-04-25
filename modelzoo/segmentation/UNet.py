@@ -9,7 +9,7 @@ class UNet(nn.Module):
         self.convInit = nn.Conv3d(in_channel, 64, 3, stride=1, padding=1)
         self.down_layers = self.make_down_layers(3)
         self.up_layers = self.make_up_layers(3)
-        self.out_layers=self.make_out_map(256,4)
+        self.out_layers=self.make_out_map(256,3,out_channel)
         self.bottom = nn.Conv3d(512, 512, 3, stride=1, padding=1)
     
     def make_down_layers(self,down_layer_num):
@@ -44,12 +44,13 @@ class UNet(nn.Module):
         return up_layers
         
         
-    def make_out_map(self,feature_channel,up_layer_num):
+    def make_out_map(self,feature_channel,up_layer_num,out_channel):
         out_layers=nn.ModuleList()
+        interpolate=[4,2,1,1]
         for i in range(up_layer_num):
             out_layer = nn.Sequential(
-            nn.Conv3d(feature_channel,2, 1, 1),
-            nn.Upsample(scale_factor=(1, 1, 1), mode='trilinear',align_corners=True),
+            nn.Conv3d(feature_channel,out_channel, 1, 1),
+            nn.Upsample(scale_factor=(interpolate[i],interpolate[i], interpolate[i]), mode='trilinear',align_corners=True),
             nn.Softmax(dim =1)
             )
             out_layers.append(out_layer)
@@ -86,7 +87,7 @@ class UNet(nn.Module):
         if self.training is True:
             return up_outs # last one is the highest stack
         else:
-            return x
+            return up_outs[2]
             
 
 if __name__ =='__main__':
@@ -94,7 +95,9 @@ if __name__ =='__main__':
     model=UNet().to(device)
     dummy=torch.randn(1, 1, 64,64,64).float().to(device)
     x=model(dummy)
-    print(x[0].shape)
+    for t in x:
+        print(t.shape)
+    
     
     
     

@@ -54,6 +54,7 @@ Conda is recommended for a clean develop environment.
 - [x] Cross Entrophy
 - [x] Dice Cross Entrophy
 - [x] SupCon [10]
+- [x] NCE
 - [ ] AdaCon [11] [#TODO] [For regression use. The key is the adaptive margin. So how to implement the adaptive margin in discrete target is a problem.]
 -  [Others](https://docs.monai.io/en/stable/losses.html)
 
@@ -74,7 +75,7 @@ Conda is recommended for a clean develop environment.
 ### Schedulers
 
 - CosineAnnealing
-- [ ] WarmupCosineAnnealing
+- [x] WarmupCosineAnnealing
 
 ## Data Preparation
 

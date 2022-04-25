@@ -7,9 +7,14 @@ import torch.multiprocessing as mp
 import torch.utils.data.distributed
 from monai.inferers import sliding_window_inference
 from monai.transforms import Compose
-from utils.data_utils import get_loader
+from monai.losses import DiceLoss, DiceCELoss
+from monai.utils.enums import MetricReduction
+from monai.transforms import AsDiscrete,Activations,Compose
+from monai.metrics import DiceMetric
+from dataset import h5Loader
+from modelzoo.segmentation.segres import SegResNet
 from trainer import run_training
-from optimizers.lr_scheduler import LinearWarmupCosineAnnealingLR
+from scheduler.warmup_cosineannealing import warmup_CosineAnnealing
 from functools import partial
 import argparse
 
@@ -30,7 +35,7 @@ parser.add_argument('--resume_ckpt', action='store_true', help='resume training 
 
 # training & validation policy
 parser.add_argument('--max_epochs', default=5000, type=int, help='max number of training epochs')
-parser.add_argument('--batch_size', default=1, type=int, help='number of batch size')
+parser.add_argument('--batch_size', default=2, type=int, help='number of batch size')
 parser.add_argument('--sw_batch_size', default=1, type=int, help='number of sliding window batch size')
 parser.add_argument('--val_every', default=10, type=int, help='validation frequency')
 parser.add_argument('--roi_x', default=96, type=int, help='roi size in x direction')
@@ -124,7 +129,7 @@ def main_worker(gpu, args):
     args.test_mode = False
     
     # load dataset
-    loader = get_loader(args)
+    trainloader,testloader = h5Loader.geth5loader("./data/problem1_datas",4)
     print(args.rank, ' gpu', args.gpu)
     
     # print batchsize
@@ -134,24 +139,26 @@ def main_worker(gpu, args):
     
 
     # DEFINE MODELS HERE.
-    model = 
+    model=SegResNet(spatial_dims=3,
+            in_channels=1,
+            out_channels=2,
+            upsample_mode="deconv",
+            using_features=False)
         
         # procedure for resume learning & finetuning & transfer learning
-        if args.resume_ckpt:
-            # Transfer Learning loading pretrained weights
-            model_dict = torch.load(os.path.join(pretrained_dir, args.pretrained_model_name))
-            model_state_dict = model.state_dict()
-            # load corresponding layer weights
-            state_dict = {k:v for k,v in model_dict.items() if k in model_state_dict.keys()}
-            #del state_dict["out.conv.conv.weight"]
-            #del state_dict["out.conv.conv.bias"]
-            model_state_dict.update(state_dict)
-            model.load_state_dict(model_state_dict)
-            print('Use pretrained weights')
-    else print("Model Not Implemented!")
+    if args.resume_ckpt:
+        # Transfer Learning loading pretrained weights
+        model_dict = torch.load(os.path.join(pretrained_dir, args.pretrained_model_name))
+        model_state_dict = model.state_dict()
+        # load corresponding layer weights
+        state_dict = {k:v for k,v in model_dict.items() if k in model_state_dict.keys()}
+        #del state_dict["out.conv.conv.weight"]
+        #del state_dict["out.conv.conv.bias"]
+        model_state_dict.update(state_dict)
+        model.load_state_dict(model_state_dict)
+        print('Use pretrained weights')
 
     # DEFINE LOSS FUNC HERE.
-    
     # using dice_loss+cross entrophy for loss function
     dice_loss = DiceCELoss(to_onehot_y=True,
                            softmax=True,
@@ -160,11 +167,9 @@ def main_worker(gpu, args):
                            smooth_dr=args.smooth_dr)
                            
     # validation pipeline - metric & post process
-    post_label = AsDiscrete(to_onehot=True,
-                            n_classes=args.out_channels)
+    post_label = AsDiscrete(to_onehot=2)
     post_pred = AsDiscrete(argmax=True,
-                           to_onehot=True,
-                           n_classes=args.out_channels)
+                           to_onehot=2)
     dice_acc = DiceMetric(include_background=True,
                           reduction=MetricReduction.MEAN,
                           get_not_nans=True)
@@ -199,7 +204,7 @@ def main_worker(gpu, args):
                                                           output_device=args.gpu,
                                                           find_unused_parameters=True)
     # DEFINE OPTIMIZER HERE
-    if args.optim_name == 'adam':
+    if args.optim_name == 'adamw':
         optimizer = torch.optim.Adam(model.parameters(),
                                      lr=args.optim_lr,
                                      weight_decay=args.reg_weight)
@@ -208,9 +213,9 @@ def main_worker(gpu, args):
 
     # DEFINE SCHEDULER HERE
     if args.lrschedule == 'warmup_cosine':
-        scheduler = LinearWarmupCosineAnnealingLR(optimizer,
-                                                  warmup_epochs=args.warmup_epochs,
-                                                  max_epochs=args.max_epochs)
+        scheduler = warmup_CosineAnnealing(optimizer,
+                                                  warm_up_iter=args.warmup_epochs,
+                                                  T_max=args.max_epochs)
     elif args.lrschedule == 'cosine_anneal':
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
                                                                T_max=args.max_epochs)
@@ -221,8 +226,8 @@ def main_worker(gpu, args):
 
     # push downstream for learning. combined all essentials.
     accuracy = run_training(model=model,
-                            train_loader=loader[0],
-                            val_loader=loader[1],
+                            train_loader=trainloader,
+                            val_loader=testloader,
                             optimizer=optimizer,
                             loss_func=dice_loss,
                             acc_func=dice_acc,
@@ -230,7 +235,8 @@ def main_worker(gpu, args):
                             model_inferer=model_inferer,
                             scheduler=scheduler,
                             start_epoch=start_epoch,
-                            postprocess=postpress)
+                            post_label=post_label,
+                            post_pred=post_pred)
     return accuracy
 
 if __name__ == '__main__':

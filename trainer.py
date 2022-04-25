@@ -9,7 +9,7 @@ import torch.nn.parallel
 from utils.utils import distributed_all_gather
 import torch.utils.data.distributed
 from monai.data import decollate_batch
-from utils.valid_utils import AverageMeter
+from utils.valid_utils import AverageMeter,to_one_hot_3d,to_one_hot_3d_target
 
 '''func for training'''
 def train_epoch(model,
@@ -24,6 +24,9 @@ def train_epoch(model,
     start_time = time.time()
     # calculate losses
     run_loss = AverageMeter()
+    # DS coeffis
+    alpha = 0.4
+    if epoch % 30 == 0: alpha *= 0.8
     for idx, batch_data in enumerate(loader):
         # clean cuda cached useless grad graph
         torch.cuda.empty_cache()
@@ -40,15 +43,18 @@ def train_epoch(model,
         with autocast(enabled=args.amp):
             # training and loss calculation
             logits = model(data)
-            loss = loss_func(logits, target)
+            loss = loss_func(logits,target)
+            #loss = loss_func(logits[2], target)+alpha*(loss_func(logits[1], target)+loss_func(logits[0], target))
         # back propagation with cuda opt.
         if args.amp:
             scaler.scale(loss).backward()
+            print("bped")
             scaler.step(optimizer)
             scaler.update()
         else:
             # normal bp
             loss.backward()
+            print("bped")
             optimizer.step()
         # collect distrib. ln. data
         if args.distributed:
@@ -68,6 +74,7 @@ def train_epoch(model,
         torch.cuda.empty_cache()
         start_time = time.time()
     for param in model.parameters() : param.grad = None
+    
     return run_loss.avg
 
 def val_epoch(model,
@@ -98,13 +105,21 @@ def val_epoch(model,
             if not logits.is_cuda:
                 target = target.cpu()
             torch.cuda.empty_cache()
-            
             # calulate metric.
-            val_labels_list = decollate_batch(target)
-            val_labels_convert = [post_label(val_label_tensor) for val_label_tensor in val_labels_list]
-            val_outputs_list = decollate_batch(logits)
-            val_output_convert = [post_pred(val_pred_tensor) for val_pred_tensor in val_outputs_list]
-            acc = acc_func(y_pred=val_output_convert, y=val_labels_convert)
+            print(logits.shape)
+            print(target.shape)
+            print(data.shape)
+            val_outputs = torch.softmax(logits, 1).cpu().numpy()
+            val_outputs = np.argmax(val_outputs, axis=1).astype(np.uint8)
+            val_labels = target.cpu().numpy()[:, 0, :, :, :]
+            logits=torch.from_numpy(val_outputs).cuda()
+            target=torch.from_numpy(val_labels).cuda()
+            print("1")
+            print(logits.shape)
+            print("2")
+            print(target.shape)
+            print("-----")
+            acc = acc_func(y_pred=logits, y=target)
             acc = acc.cuda(args.rank)
 
             # collect

@@ -2,7 +2,6 @@ import os
 import torch
 import numpy as np
 from monai.inferers import sliding_window_inference
-from utils.data_utils import get_loader
 import argparse
 import os
 import time
