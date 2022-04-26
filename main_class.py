@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torchvision
 from monai.metrics import DiceMetric
-from dataset import csvloader
+from dataset import csvloader,suploader
 from modelzoo.classification.ResNet50 import ResNet50
 from modelzoo.classification.ConvNeXt import ConvNeXt
 from monai.networks.nets import DenseNet121
@@ -107,7 +107,7 @@ def main_worker(gpu, args):
     args.test_mode = False
     
     # load dataset
-    trainloader,testloader = csvloader.getcsvloader("./data/problem2_datas",16)
+    trainloader,testloader = suploader.getcsvloader("./data/problem2_datas",16)
     '''trainloader = torch.utils.data.DataLoader(
   torchvision.datasets.MNIST('./data/', train=True, download=True,
                              transform=torchvision.transforms.Compose([
@@ -155,8 +155,12 @@ def main_worker(gpu, args):
     model.cuda(args.gpu)
     
     # DEFINE OPTIMIZER HERE
-    optimizer = torch.optim.Adam(model.parameters(),
-                                     lr=args.optim_lr,weight_decay=2e-05)
+    '''optimizer = torch.optim.Adam(model.parameters(),
+                                     lr=args.optim_lr,weight_decay=2e-05)'''
+    optimizer=torch.optim.SGD(model.parameters(),
+                          lr=args.optim_lr,
+                          momentum=0.9,
+                          weight_decay=1e-4)
                                      
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.max_epochs)
 

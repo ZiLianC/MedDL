@@ -39,17 +39,17 @@ def train_epoch(model,
         else:
             data, target = batch_data['image'], batch_data['label']
         # set data downstream to cuda 
-        data, target = data.cuda(args.rank), target.cuda(args.rank)
         images = torch.cat([data[0], data[1]], dim=0)
+        images, target = images.cuda(args.rank), target.cuda(args.rank)
         bsz = target.shape[0]
         # set non grad for training
         for param in model.parameters(): param.grad = None
         # cuda opt
             # training and loss calculation
-        logits = model(images)
+        features = model(images)
         f1, f2 = torch.split(features, [bsz, bsz], dim=0)
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-        loss = loss_func(logits,target)+loss_con(features,target)
+        loss = loss_con(features,target)
             #loss = loss_func(logits[2], target)+alpha*(loss_func(logits[1], target)+loss_func(logits[0], target))
         # back propagation with cuda opt.
             # normal bp

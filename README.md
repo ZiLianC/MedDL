@@ -36,6 +36,7 @@ Conda is recommended for a clean develop environment.
 - [x] PoolFormer [6]
 - [x] ConvNeXt [7]
 - [x] ResNet-50 [8] (ResNet Strikes Back[12])[Pytorch Blog](https://pytorch.org/blog/how-to-train-state-of-the-art-models-using-torchvision-latest-primitives/#mixup-and-cutmix)
+  <Regarding ISIC 2018, we resize the spatial resolution of the original image from 600×450 to 240×240, randomly crop a 224×224 region, and normalize the cropped region as the network input.
 
 ### Temporal Recoginition [(Related Field)](https://paperswithcode.com/task/weakly-supervised-temporal-action)
 
