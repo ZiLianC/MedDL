@@ -1,146 +1,104 @@
 import os
+import shutil
+import tempfile
+import matplotlib.pyplot as plt
+import PIL
 import torch
 import numpy as np
-from monai.inferers import sliding_window_inference
-import argparse
-import os
-import time
-import numpy as np
-import torch
-import torch.nn.parallel
-import torch.utils.data.distributed
-import torch
-import torch.nn.parallel
-import torch.utils.data.distributed
-from monai.inferers import sliding_window_inference
-from utils.data_utils import get_loader
-from utils.valid_utils import dice
-from utils.visualization import print_cut_samples,print_heatmap
-from utils.slide_saliency_inference import sliding_saliency_inference
-from monai.inferers import SaliencyInferer
+from sklearn.metrics import classification_report
+from dataset import csvloader
+from monai.apps import download_and_extract
+from monai.config import print_config
+from monai.data import decollate_batch
+from monai.metrics import ROCAUCMetric
+from monai.networks.nets import DenseNet121
+from monai.transforms import (
+    Activations,
+    AddChannel,
+    AsDiscrete,
+    Compose,
+    LoadImage,
+    RandFlip,
+    RandRotate,
+    RandZoom,
+    ScaleIntensity,
+    EnsureType,
+)
+from monai.utils import set_determinism
 
-parser = argparse.ArgumentParser(description='UNETR segmentation pipeline')
-# datas and models info.
-parser.add_argument('--typeoftask', default='segmentation', type=str, help='type of DL task')
-parser.add_argument('--pretrained_dir', default='./pretrained_models/', type=str, help='pretrained checkpoint directory')
-parser.add_argument('--pretrained_model_name', default='model_best_model.pth', type=str, help='pretrained model name')
-parser.add_argument('--state_dict', action='store_true', help='Using state_dict style pretrained')
-parser.add_argument('--data_dir', default='./dataset/', type=str, help='dataset directory')
-parser.add_argument('--data_list', default='dataset_0.json', type=str, help='dataset json file')
+print_config()
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = DenseNet121(spatial_dims=2, in_channels=3,
+                    out_channels=7).to(device)
+loss_function = torch.nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(model.parameters(), 1e-5)
+max_epochs = 4
+val_interval = 1
+auc_metric = ROCAUCMetric()
+best_metric = -1
+best_metric_epoch = -1
+epoch_loss_values = []
+metric_values = []
+trainloader,testloader = csvloader.getcsvloader("./data/problem2_datas",16)
 
-#visualization
-parser.add_argument('--save_img', default='test', type=str, help='image cut save file')
+for epoch in range(max_epochs):
+    print("-" * 10)
+    print(f"epoch {epoch + 1}/{max_epochs}")
+    model.train()
+    epoch_loss = 0
+    step = 0
+    for batch_data in trainloader:
+        step += 1
+        inputs, labels = batch_data[0].to(device), batch_data[1].to(device)
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = loss_function(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        epoch_loss += loss.item()
+        print(
+            f"{step}/768, "
+            f"train_loss: {loss.item():.4f}")
+        #epoch_len = len(train_ds) // train_loader.batch_size
+    epoch_loss /= step
+    epoch_loss_values.append(epoch_loss)
+    print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
+    y_pred_trans = Compose([EnsureType(), Activations(softmax=True)])
+    y_trans = Compose([EnsureType(), AsDiscrete(to_onehot=7)])
+    if (epoch + 1) % val_interval == 0:
+        model.eval()
+        with torch.no_grad():
+            y_pred = torch.tensor([], dtype=torch.float32, device=device)
+            y = torch.tensor([], dtype=torch.long, device=device)
+            for val_data in testloader:
+                val_images, val_labels = (
+                    val_data[0].to(device),
+                    val_data[1].to(device),
+                )
+                y_pred = torch.cat([y_pred, model(val_images)], dim=0)
+                y = torch.cat([y, val_labels], dim=0)
+            y_onehot = [y_trans(i) for i in decollate_batch(y)]
+            y_pred_act = [y_pred_trans(i) for i in decollate_batch(y_pred)]
+            auc_metric(y_pred_act, y_onehot)
+            result = auc_metric.aggregate()
+            auc_metric.reset()
+            del y_pred_act, y_onehot
+            metric_values.append(result)
+            acc_value = torch.eq(y_pred.argmax(dim=1), y)
+            acc_metric = acc_value.sum().item() / len(acc_value)
+            if result > best_metric:
+                best_metric = result
+                best_metric_epoch = epoch + 1
+                torch.save(model.state_dict(), os.path.join(
+                    root_dir, "best_metric_model.pth"))
+                print("saved new best metric model")
+            print(
+                f"current epoch: {epoch + 1} current AUC: {result:.4f}"
+                f" current accuracy: {acc_metric:.4f}"
+                f" best AUC: {best_metric:.4f}"
+                f" at epoch: {best_metric_epoch}"
+            )
 
-# inference info.
-parser.add_argument('--roi_x', default=96, type=int, help='roi size in x direction')
-parser.add_argument('--roi_y', default=96, type=int, help='roi size in y direction')
-parser.add_argument('--roi_z', default=96, type=int, help='roi size in z direction')
-
-# data preprocessing
-parser.add_argument('--a_min', default=-175.0, type=float, help='a_min in ScaleIntensityRanged')
-parser.add_argument('--a_max', default=250.0, type=float, help='a_max in ScaleIntensityRanged')
-parser.add_argument('--b_min', default=0.0, type=float, help='b_min in ScaleIntensityRanged')
-parser.add_argument('--b_max', default=1.0, type=float, help='b_max in ScaleIntensityRanged')
-parser.add_argument('--workers', default=4, type=int, help='number of workers')
-
-# miscellenous
-parser.add_argument('--in_channels', default=1, type=int, help='number of input channels')
-parser.add_argument('--out_channels', default=2, type=int, help='number of output channels')
-parser.add_argument('--distributed', action='store_true', help='distributed training models')
-parser.add_argument('--saliency', action='store_true', help='Print Saliency Map')
-
-
-def main():
-    args = parser.parse_args()
-    if args.distributed:
-        dist.init_process_group(backend='nccl',
-                                init_method='tcp://127.0.0.1:23456',
-                                world_size=1,
-                                rank=0)
-    torch.cuda.empty_cache() 
-    # enable test mode
-    args.test_mode = True
-    # load data
-    val_loader = get_loader(args)
-    # load device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Init printing saliency map. Implemented by MONAI. CAM GRADCAM supported
-    if args.saliency:
-        sf=SaliencyInferer("CAM","conv_final.0")
-
-    # load model
-    pretrained_dir = args.pretrained_dir
-    model_name = args.pretrained_model_name
-    pretrained_pth = os.path.join(pretrained_dir, model_name)
-    
-    if args.state_dict: # you need to define model by hand. uh ohh.
-        '''model = UNETR(
-            in_channels=args.in_channels,
-            out_channels=args.out_channels,
-            img_size=(args.roi_x, args.roi_y, args.roi_z),
-            feature_size=args.feature_size,
-            hidden_size=args.hidden_size,
-            mlp_dim=args.mlp_dim,
-            num_heads=args.num_heads,
-            pos_embed=args.pos_embed,
-            norm_name=args.norm_name,
-            conv_block=True,
-            res_block=True,
-            dropout_rate=args.dropout_rate)'''
-            model_dict = torch.load(os.path.join(pretrained_dir, args.pretrained_model_name))
-            model.load_state_dict(model_dict["state_dict"])
-            
-    # load model
-    model=torch.load(pretrained_pth)
-    
-    for index ,(name, param) in enumerate(model.named_parameters()):
-        print( str(index) + " " +name)
-
-    # for sliding window inference
-    inf_size = [args.roi_x, args.roi_y, args.roi_x]
-
-    model.eval()
-    model.to(device)
-    start_time = time.time()
-    with torch.no_grad():
-        dice_list_case = []
-        for i, batch in enumerate(val_loader):
-            val_inputs, val_labels = (batch["image"].cuda(), batch["label"].cuda())
-            img_name = batch['image_meta_dict']['filename_or_obj'][0].split('/')[-1]
-            print("Inference on case {}".format(img_name))
-            # sliding windows inference
-            
-            if args.saliency & args.typeoftask=='classification':
-                heatmap = sf(val_inputs,model)
-                path=img_name.split(".")[0]+args.pretrained_model_name.split(".")[0]+"heatmap"
-                print_heatmap(val_inputs,val_labels,val_outputs,salient,path)
-            
-            else: val_outputs = sliding_window_inference(val_inputs,
-                                                   (96, 96, 96),
-                                                   4,
-                                                   model,
-                                                   overlap=args.infer_overlap)
-            
-            if args.typeoftask == 'segmentation':
-                #visualization
-                path=img_name.split(".")[0]+args.pretrained_model_name.split(".")[0]+".png"
-                print_cut_samples(val_inputs,val_labels,val_outputs,path)
-                # postprocess softmax->argmax for segmentation.
-                val_outputs = torch.softmax(val_outputs, 1).cpu().numpy()
-                val_outputs = np.argmax(val_outputs, axis=1).astype(np.uint8)
-                val_labels = val_labels.cpu().numpy()[:, 0, :, :, :]
-            
-            dice_list_sub = []
-            # calculate desired metric
-            organ_Dice = dice(val_outputs[0] == 1, val_labels[0] == 1)
-            dice_list_sub.append(organ_Dice)
-            mean_dice = np.mean(dice_list_sub)
-            print("Mean Organ Dice: {}".format(mean_dice))
-            dice_list_case.append(mean_dice)
-            torch.cuda.empty_cache()
-        # ave. metric.
-        print("Overall Mean Dice: {}".format(np.mean(dice_list_case)))
-
-if __name__ == '__main__':
-    main()
+print(
+    f"train completed, best_metric: {best_metric:.4f} "
+    f"at epoch: {best_metric_epoch}")

@@ -2,16 +2,7 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.parallel
-import torch.distributed as dist
-import torch.multiprocessing as mp
-import torch.utils.data.distributed
 import torchvision
-from monai.inferers import sliding_window_inference
-from monai.transforms import Compose
-from monai.losses import DiceLoss, DiceCELoss
-from monai.utils.enums import MetricReduction
-from monai.transforms import AsDiscrete,Activations,Compose
 from monai.metrics import DiceMetric
 from dataset import csvloader
 from modelzoo.classification.ResNet50 import ResNet50
@@ -21,6 +12,7 @@ from trainer_class import run_training
 from scheduler.warmup_cosineannealing import warmup_CosineAnnealing
 from functools import partial
 from sklearn.metrics import accuracy_score
+from loss.supcon import SupConLoss
 import argparse
 
 parser = argparse.ArgumentParser(description='Template pipeline')
@@ -94,16 +86,7 @@ def main():
     # log dir
     args.logdir = './runs/' + args.logdir
     # distributed learning backend & workplace init.
-    if args.distributed:
-        args.ngpus_per_node = torch.cuda.device_count()
-        print('Found total gpus', args.ngpus_per_node)
-        args.world_size = args.ngpus_per_node * args.world_size
-        mp.spawn(main_worker,
-                 nprocs=args.ngpus_per_node,
-                 args=(args,))
-    # single card learning just start.
-    else:
-        main_worker(gpu=args.gpus, args=args)
+    main_worker(gpu=args.gpus, args=args)
 
 
 
@@ -116,16 +99,6 @@ def main_worker(gpu, args):
     inf_size = [args.roi_x, args.roi_y, args.roi_x]
     pretrained_dir = args.pretrained_dir
     
-    # init distributed learning (optional)
-    if args.distributed:
-        # start multiprocess for distributed learning
-        torch.multiprocessing.set_start_method('fork', force=True)
-        # set rank
-        args.rank = args.rank * args.ngpus_per_node + gpu
-        dist.init_process_group(backend=args.dist_backend,
-                                init_method=args.dist_url,
-                                world_size=args.world_size,
-                                rank=args.rank)
     # card settings
     torch.cuda.set_device(args.gpu)
     torch.backends.cudnn.benchmark = True
@@ -134,7 +107,22 @@ def main_worker(gpu, args):
     args.test_mode = False
     
     # load dataset
-    trainloader,testloader = csvloader.getcsvloader("./data/problem2_datas",1)
+    trainloader,testloader = csvloader.getcsvloader("./data/problem2_datas",16)
+    '''trainloader = torch.utils.data.DataLoader(
+  torchvision.datasets.MNIST('./data/', train=True, download=True,
+                             transform=torchvision.transforms.Compose([
+                               torchvision.transforms.ToTensor(),
+                               torchvision.transforms.Normalize(
+                                 (0.1307,), (0.3081,))
+                             ])),
+  batch_size=16, shuffle=True)
+    testloader = torch.utils.data.DataLoader(torchvision.datasets.MNIST('./data/', train=False, download=True,
+                             transform=torchvision.transforms.Compose([
+                               torchvision.transforms.ToTensor(),
+                               torchvision.transforms.Normalize(
+                                 (0.1307,), (0.3081,))
+                             ])),
+  batch_size=1, shuffle=True)'''
     print(args.rank, ' gpu', args.gpu)
     
     # print batchsize
@@ -145,41 +133,15 @@ def main_worker(gpu, args):
 
     # DEFINE MODELS HERE.
     model=ResNet50(3,7,use_feature=False)
-    #model=ConvNeXt(1,num_classes=10)
-    #model=DenseNet121(spatial_dims=2, in_channels=1,
+    #model=ConvNeXt(3,num_classes=7)
+    #model=DenseNet121(spatial_dims=2, in_channels=3,
                    #out_channels=7)
-        
-        # procedure for resume learning & finetuning & transfer learning
-    if args.resume_ckpt:
-        # Transfer Learning loading pretrained weights
-        model_dict = torch.load(os.path.join(pretrained_dir, args.pretrained_model_name))
-        model_state_dict = model.state_dict()
-        # load corresponding layer weights
-        state_dict = {k:v for k,v in model_dict.items() if k in model_state_dict.keys()}
-        #del state_dict["out.conv.conv.weight"]
-        #del state_dict["out.conv.conv.bias"]
-        model_state_dict.update(state_dict)
-        model.load_state_dict(model_state_dict)
-        print('Use pretrained weights')
-
     # DEFINE LOSS FUNC HERE.
     # using dice_loss+cross entrophy for loss function
-    bce_loss = nn.CrossEntropyLoss()
-                           
-    # validation pipeline - metric & post process
-    post_label = AsDiscrete(to_onehot=2)
-    post_pred = AsDiscrete(argmax=True,
-                           to_onehot=2)
-    dice_acc = DiceMetric(include_background=True,
-                          reduction=MetricReduction.MEAN,
-                          get_not_nans=True)
-    
-    #using sliding window inference for memory efficient inference
-    model_inferer = partial(sliding_window_inference,
-                            roi_size=inf_size,
-                            sw_batch_size=args.sw_batch_size,
-                            predictor=model,
-                            overlap=args.infer_overlap)
+    weight=[0.15,0.05,0.15,0.15,0.15,0.15,0.15]
+    weight=torch.tensor(weight,dtype=torch.float).cuda()
+    bce_loss = nn.CrossEntropyLoss(weight=weight,label_smoothing=0.1)
+    con_loss =SupConLoss(temperature=0.07)
                             
     # param number
     pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -192,37 +154,11 @@ def main_worker(gpu, args):
     # model downstream to card
     model.cuda(args.gpu)
     
-    if args.distributed:
-        torch.cuda.set_device(args.gpu)
-        if args.norm_name == 'batch':
-            # in distributed learning, MUST use sync_batchnorm!
-            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
-        model.cuda(args.gpu)
-        # set parallel.
-        model = torch.nn.parallel.DistributedDataParallel(model,
-                                                          device_ids=[args.gpu],
-                                                          output_device=args.gpu,
-                                                          find_unused_parameters=True)
     # DEFINE OPTIMIZER HERE
-    if args.optim_name == 'adamw':
-        optimizer = torch.optim.Adam(model.parameters(),
-                                     lr=args.optim_lr,
-                                     weight_decay=args.reg_weight)
-    else:
-        raise ValueError('Unsupported Optimization Procedure: ' + str(args.optim_name))
-
-    # DEFINE SCHEDULER HERE
-    if args.lrschedule == 'warmup_cosine':
-        scheduler = warmup_CosineAnnealing(optimizer,
-                                                  warm_up_iter=args.warmup_epochs,
-                                                  T_max=args.max_epochs)
-    elif args.lrschedule == 'cosine_anneal':
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,
-                                                               T_max=args.max_epochs)
-        if args.checkpoint is not None:
-            scheduler.step(epoch=start_epoch)
-    else:
-        scheduler = None
+    optimizer = torch.optim.Adam(model.parameters(),
+                                     lr=args.optim_lr,weight_decay=2e-05)
+                                     
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.max_epochs)
 
     # push downstream for learning. combined all essentials.
     accuracy = run_training(model=model,
@@ -230,13 +166,14 @@ def main_worker(gpu, args):
                             val_loader=testloader,
                             optimizer=optimizer,
                             loss_func=bce_loss,
+                            loss_con= con_loss,
                             acc_func=accuracy_score,
                             args=args,
                             model_inferer=None,
-                            scheduler=None,
+                            scheduler=scheduler,
                             start_epoch=start_epoch,
-                            post_label=post_label,
-                            post_pred=post_pred)
+                            post_label=None,
+                            post_pred=None)
     return accuracy
 
 if __name__ == '__main__':

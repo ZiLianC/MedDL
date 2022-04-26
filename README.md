@@ -35,7 +35,7 @@ Conda is recommended for a clean develop environment.
 
 - [x] PoolFormer [6]
 - [x] ConvNeXt [7]
-- [x] ResNet-50 [8]
+- [x] ResNet-50 [8] (ResNet Strikes Back[12])[Pytorch Blog](https://pytorch.org/blog/how-to-train-state-of-the-art-models-using-torchvision-latest-primitives/#mixup-and-cutmix)
 
 ### Temporal Recoginition [(Related Field)](https://paperswithcode.com/task/weakly-supervised-temporal-action)
 
@@ -138,4 +138,5 @@ Use test.py for testing/vis. pipeline.
 
 [11] Dai, Weihang, et al. ‘Adaptive Contrast for Image Regression in Computer-Aided Disease Assessment’. IEEE Transactions on Medical Imaging, 2021, pp. 1–1. DOI.org (Crossref), https://doi.org/10.1109/TMI.2021.3137854.
 
+[12] Wightman, Ross, et al. ‘ResNet Strikes Back: An Improved Training Procedure in Timm’. ArXiv:2110.00476 [Cs], 1, Oct. 2021. arXiv.org, http://arxiv.org/abs/2110.00476.
 

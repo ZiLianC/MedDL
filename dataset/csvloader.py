@@ -20,19 +20,14 @@ class csvloader(torch.utils.data.Dataset):
         self.path=path
         self.img_list,self.label_list = self.load_all_file(os.path.join(path,"annotation"))
         self.train_transforms = transforms.Compose([
-                       transforms.Resize([96,96]),
-                       transforms.RandomHorizontalFlip(0.3),
-                       transforms.RandomRotation(90),
-                       transforms.RandomVerticalFlip(0.3),
-                       transforms.RandomEqualize(0.3),
+                       transforms.Resize([256,256]),
                        transforms.ToTensor(),
-                       transforms.Normalize([0.485,0.456,0.406],[0.229,0.224,0.225])
+                       transforms.Normalize(mean=[0.78277665, 0.53458846, 0.55787057],std=[0.13301167, 0.14758444, 0.16624169])
                    ])
         self.test_transforms = transforms.Compose([
-                       transforms.Resize([96,96]),
+                        transforms.Resize([256,256]),
                        transforms.ToTensor(),
-                       transforms.Normalize([0.485,0.456,0.406], [0.229,0.224,0.225])
-      
+                       transforms.Normalize(mean=[0.78277665, 0.53458846, 0.55787057],std=[0.13301167, 0.14758444, 0.16624169])
                    ])
 
         

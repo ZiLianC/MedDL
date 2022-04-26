@@ -2,6 +2,7 @@ import os
 import time
 import shutil
 import numpy as np
+from tqdm import tqdm
 import torch
 import torch.nn.functional as F 
 from torch.cuda.amp import GradScaler, autocast
@@ -19,6 +20,7 @@ def train_epoch(model,
                 scaler,
                 epoch,
                 loss_func,
+                loss_con,
                 args):
     # set in train mode
     model.train()
@@ -28,7 +30,7 @@ def train_epoch(model,
     # DS coeffis
     alpha = 0.4
     if epoch % 30 == 0: alpha *= 0.8
-    for idx, batch_data in enumerate(loader):
+    for idx, batch_data in tqdm(enumerate(loader)):
         # clean cuda cached useless grad graph
         torch.cuda.empty_cache()
         # try batch_data is a list to select ways of loading. for compatibility
@@ -38,32 +40,23 @@ def train_epoch(model,
             data, target = batch_data['image'], batch_data['label']
         # set data downstream to cuda 
         data, target = data.cuda(args.rank), target.cuda(args.rank)
+        images = torch.cat([data[0], data[1]], dim=0)
+        bsz = target.shape[0]
         # set non grad for training
         for param in model.parameters(): param.grad = None
         # cuda opt
-        
             # training and loss calculation
-        print(data.shape)
-        logits = model(data)
-        print(logits.shape)
-        print(target.shape)
-        loss = loss_func(logits,target)
+        logits = model(images)
+        f1, f2 = torch.split(features, [bsz, bsz], dim=0)
+        features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
+        loss = loss_func(logits,target)+loss_con(features,target)
             #loss = loss_func(logits[2], target)+alpha*(loss_func(logits[1], target)+loss_func(logits[0], target))
         # back propagation with cuda opt.
             # normal bp
+        optimizer.zero_grad()
         loss.backward()
-        print("bped")
         optimizer.step()
-        # collect distrib. ln. data
-        if args.distributed:
-            loss_list = distributed_all_gather([loss],
-                                               out_numpy=True,
-                                               is_valid=idx < loader.sampler.valid_length)
-            run_loss.update(np.mean(np.mean(np.stack(loss_list, axis=0), axis=0), axis=0),
-                            n=args.batch_size * args.world_size)
-        else:
-            # calculate aver. loss
-            run_loss.update(loss.item(), n=args.batch_size)
+        run_loss.update(loss.item(), n=args.batch_size)
         # print data
         if args.rank == 0:
             print('Epoch {}/{} {}/{}'.format(epoch, args.max_epochs, idx, len(loader)),
@@ -97,11 +90,7 @@ def val_epoch(model,
             else:
                 data, target = batch_data['image'], batch_data['label']
             data, target = data.cuda(args.rank), target.cuda(args.rank)
-            with autocast(enabled=args.amp):
-                if model_inferer is not None:
-                    logits = model_inferer(data)
-                else:
-                    logits = model(data)
+            logits = model(data)
             if not logits.is_cuda:
                 target = target.cpu()
             torch.cuda.empty_cache()
@@ -110,7 +99,6 @@ def val_epoch(model,
             y_val.append(target.cpu().item())
             y_pred.append(logits.argmax(dim=1).cpu().item())
             print(logits.argmax(dim=1).cpu().item())
-            print(target.cpu().item())
             torch.cuda.empty_cache()
             start_time = time.time()
         acc = acc_func(y_val,y_pred)
@@ -152,6 +140,7 @@ def run_training(model,
                  val_loader,
                  optimizer,
                  loss_func,
+                 loss_con,
                  acc_func,
                  args,
                  model_inferer=None,
@@ -165,29 +154,22 @@ def run_training(model,
     if args.logdir is not None and args.rank == 0:
         writer = SummaryWriter(log_dir=args.logdir)
         if args.rank == 0: print('Writing Tensorboard logs to ', args.logdir)
-    # cuda opt
-    scaler = None
-    if args.amp:
-        scaler = GradScaler()
     val_acc_max = 0.
     
     # epoch iteration
     for epoch in range(start_epoch, args.max_epochs):
         torch.cuda.empty_cache()
         # distrib. ln. setting
-        if args.distributed:
-            train_loader.sampler.set_epoch(epoch)
-            torch.distributed.barrier()
         print(args.rank, time.ctime(), 'Epoch:', epoch)
         epoch_time = time.time()
-        
         # training
         train_loss = train_epoch(model,
                                  train_loader,
                                  optimizer,
-                                 scaler=scaler,
+                                 scaler=None,
                                  epoch=epoch,
                                  loss_func=loss_func,
+                                 loss_con = loss_con,
                                  args=args)
         if args.rank == 0:
             print('Final training  {}/{}'.format(epoch, args.max_epochs - 1), 'loss: {:.4f}'.format(train_loss),
@@ -209,8 +191,6 @@ def run_training(model,
         # evaluate model & weight in selected epochs.
         if (epoch+1) % args.val_every == 0:
             torch.cuda.empty_cache()
-            if args.distributed:
-                torch.distributed.barrier()
             epoch_time = time.time()
             val_avg_acc = val_epoch(model,
                                     val_loader,

@@ -10,17 +10,17 @@ class ResBlocks(nn.Module):
         if self.is_downsample:
             self.downsample=nn.Sequential(
             nn.Conv2d(in_channel,out_filter, 1, stride=stride),
-            nn.BatchNorm2d(out_filter))
+            nn.GroupNorm(8,out_filter))
         
     def make_BottleNeck(self,input_channel,in_filter,out_filter,stride):
         return nn.Sequential(
             nn.Conv2d(input_channel,in_filter, 1, stride=stride,bias=False),
-            nn.BatchNorm2d(in_filter),
+            nn.GroupNorm(8,in_filter),
             nn.Conv2d(in_filter, in_filter, 3, stride=1, padding=1,bias=False),
-            nn.BatchNorm2d(in_filter),
-            nn.ReLU(),
+            nn.GroupNorm(8,in_filter),
+            nn.ReLU(inplace=True),
             nn.Conv2d(in_filter,out_filter, 1, stride=1,bias=False),
-            nn.BatchNorm2d(out_filter)
+            nn.GroupNorm(8,out_filter)
             )
             
     def forward(self,x):
@@ -40,7 +40,7 @@ class ResNet50(nn.Module):
         self.use_feature=use_feature
         self.input_conv = nn.Sequential(
         nn.Conv2d(in_channel, 64, kernel_size=7, stride=2, padding=3),
-        nn.BatchNorm2d(64),
+        nn.GroupNorm(8,64),
         nn.ReLU(inplace=True),
         nn.MaxPool2d(kernel_size=3, stride=2, padding=1))
         self.layer1=self._make_layer(64,64,256,3)
@@ -48,7 +48,19 @@ class ResNet50(nn.Module):
         self.layer3=self._make_layer(512,256,1024,6,2)
         self.layer4=self._make_layer(1024,512,2048,3,2)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(2048, class_num)
+        self.head = nn.Sequential(
+                nn.Linear(2048, 2048),
+                nn.ReLU(inplace=True),
+                nn.Linear(2048, 7))
+        
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+
     
     def _make_layer(self, in_channels,in_filters, out_filters, blocks_num, stride = 1):
         layers = []
@@ -70,7 +82,8 @@ class ResNet50(nn.Module):
         # out
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
-        x = self.fc(x)
+        x = self.head(x)
+        x = F.normalize(x,dim=1)
         return x
             
 
