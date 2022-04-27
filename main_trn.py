@@ -29,7 +29,8 @@ parser.add_argument('--save_checkpoint', action='store_true', help='save checkpo
 parser.add_argument('--workers', default=4, type=int, help='number of workers')
 parser.add_argument('--model_name', default='unetr', type=str, help='model name')
 parser.add_argument('--resume_ckpt', action='store_true', help='resume training from pretrained checkpoint')
-
+parser.add_argument('--rank', default=0, type=int, help='node rank for distributed training')
+parser.add_argument('--distributed', action='store_true', help='start distributed training')
 # training & validation policy
 parser.add_argument('--max_epochs', default=1000, type=int, help='max number of training epochs')
 parser.add_argument('--batch_size', default=2, type=int, help='number of batch size')
