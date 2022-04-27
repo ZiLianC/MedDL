@@ -1,4 +1,5 @@
-from ResNet50 import ResNet50
+from modelzoo.classification.ResNet50 import ResNet50
+#from ResNet50 import ResNet50
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -10,8 +11,11 @@ class TRN(nn.Module):
         self.input_size=input_size
         self.feature_extractor=ResNet50(in_channel,class_num,use_feature=True)
         self.lstm = nn.LSTM(2048, 2048,3, batch_first=True)
-        self.fc = nn.Linear(2048*2*2, 2048)
-        self.out=nn.Linear(2048,class_num)
+        self.fc = nn.Linear(2048*4*4, 2048)
+        self.out = nn.Sequential(
+                nn.Linear(2048, 2048),
+                nn.ReLU(inplace=True),
+                nn.Linear(2048, class_num))
     
     def forward(self, x):
         #x.shape [batchsize,seqsize,3,inputsize,inputsize]
@@ -19,21 +23,20 @@ class TRN(nn.Module):
         x = x.view(B * self.seq_size, 3, self.input_size, self.input_size)# [batchsize,seqsize,3,inputsize,inputsize] -> [batchsize*seqsize,2048,2,2]
         x = self.feature_extractor(x)
         #[batchsize*seqsize,2048,2,2]-> [batchsize*seqsize, 2048*2*2]
-        x = x.view(-1, 2048*2*2)
+        x = x.view(-1, 2048*4*4)
         # project back to 2048
         x = self.fc(x)
         # [batchsize , seqsize ,2048]
         x = x.view(-1,self.seq_size, x.size(1))
-        print(x.shape)
         lstm_out, _ = self.lstm(x)
-        print(lstm_out.shape)
         lstm_out = lstm_out[:,-1,:]
         output=self.out(lstm_out)
+        output = F.normalize(output,dim=1)
         return output
         
 if __name__ =='__main__':
     device = torch.device('cuda')
-    model=TRN(3,64,3,3).to(device)
-    dummy=torch.randn(1,3, 3, 64,64).float().to(device)
+    model=TRN(3,126,3,7).to(device)
+    dummy=torch.randn(16,3, 3, 126,126).float().to(device)
     x=model(dummy)
     print(x.shape)

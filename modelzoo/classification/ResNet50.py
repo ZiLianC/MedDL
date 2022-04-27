@@ -83,7 +83,7 @@ class ResNet50(nn.Module):
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.head(x)
-        x = F.normalize(x,dim=1)
+        #x = F.normalize(x,dim=1)
         return x
             
 

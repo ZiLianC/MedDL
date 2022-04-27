@@ -30,7 +30,7 @@ def train_epoch(model,
     # DS coeffis
     alpha = 0.4
     if epoch % 30 == 0: alpha *= 0.8
-    for idx, batch_data in tqdm(enumerate(loader)):
+    for idx, batch_data in enumerate(loader):
         # clean cuda cached useless grad graph
         torch.cuda.empty_cache()
         # try batch_data is a list to select ways of loading. for compatibility
@@ -39,17 +39,13 @@ def train_epoch(model,
         else:
             data, target = batch_data['image'], batch_data['label']
         # set data downstream to cuda 
-        images = torch.cat([data[0], data[1]], dim=0)
-        images, target = images.cuda(args.rank), target.cuda(args.rank)
-        bsz = target.shape[0]
+        images, target = data.cuda(), target.cuda()
         # set non grad for training
         for param in model.parameters(): param.grad = None
         # cuda opt
             # training and loss calculation
-        features = model(images)
-        f1, f2 = torch.split(features, [bsz, bsz], dim=0)
-        features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-        loss = loss_con(features,target)
+        logits = model(images)
+        loss = loss_func(logits,target)
             #loss = loss_func(logits[2], target)+alpha*(loss_func(logits[1], target)+loss_func(logits[0], target))
         # back propagation with cuda opt.
             # normal bp
@@ -58,8 +54,8 @@ def train_epoch(model,
         optimizer.step()
         run_loss.update(loss.item(), n=args.batch_size)
         # print data
-        if args.rank == 0:
-            print('Epoch {}/{} {}/{}'.format(epoch, args.max_epochs, idx, len(loader)),
+        
+        print('Epoch {}/{} {}/{}'.format(epoch, args.max_epochs, idx, len(loader)),
                   'loss: {:.4f}'.format(run_loss.avg),
                   'time {:.2f}s'.format(time.time() - start_time))
         torch.cuda.empty_cache()
@@ -89,7 +85,7 @@ def val_epoch(model,
                 data, target = batch_data
             else:
                 data, target = batch_data['image'], batch_data['label']
-            data, target = data.cuda(args.rank), target.cuda(args.rank)
+            data, target = data.cuda(), target.cuda()
             logits = model(data)
             if not logits.is_cuda:
                 target = target.cpu()
@@ -113,7 +109,7 @@ def save_checkpoint(model,
                     optimizer=None,
                     scheduler=None):
     # save state dict & best epoch & epoch & optimizer & scheduler for checkpoint reload
-    state_dict = model.state_dict() if not args.distributed else model.module.state_dict()
+    state_dict = model.state_dict()
     save_dict = {
             'epoch': epoch,
             'best_acc': best_acc,
@@ -151,16 +147,16 @@ def run_training(model,
                  ):
     writer = None
     # tensorboard logging
-    if args.logdir is not None and args.rank == 0:
+    if args.logdir is not None:
         writer = SummaryWriter(log_dir=args.logdir)
-        if args.rank == 0: print('Writing Tensorboard logs to ', args.logdir)
+        print('Writing Tensorboard logs to ', args.logdir)
     val_acc_max = 0.
     
     # epoch iteration
     for epoch in range(start_epoch, args.max_epochs):
         torch.cuda.empty_cache()
         # distrib. ln. setting
-        print(args.rank, time.ctime(), 'Epoch:', epoch)
+        print(time.ctime(), 'Epoch:', epoch)
         epoch_time = time.time()
         # training
         train_loss = train_epoch(model,
@@ -171,17 +167,16 @@ def run_training(model,
                                  loss_func=loss_func,
                                  loss_con = loss_con,
                                  args=args)
-        if args.rank == 0:
-            print('Final training  {}/{}'.format(epoch, args.max_epochs - 1), 'loss: {:.4f}'.format(train_loss),
+        print('Final training  {}/{}'.format(epoch, args.max_epochs - 1), 'loss: {:.4f}'.format(train_loss),
                   'time {:.2f}s'.format(time.time() - epoch_time))
 
         # write loss to tbx
-        if args.rank==0 and writer is not None:
+        if writer is not None:
             writer.add_scalar('train_loss', train_loss, epoch)
         b_new_best = False
 
         # save model & weight in selected epochs.
-        if args.rank == 0 and args.logdir is not None and args.save_checkpoint:
+        if args.logdir is not None and args.save_checkpoint:
             save_checkpoint(model,
                                 epoch,
                                 args,
@@ -201,7 +196,7 @@ def run_training(model,
                                     post_label=post_label,
                                     post_pred=post_pred)
             # write to tbx
-            if args.rank == 0:
+            if True:
                 print('Final validation  {}/{}'.format(epoch, args.max_epochs - 1),
                       'acc', val_avg_acc, 'time {:.2f}s'.format(time.time() - epoch_time))
                 if writer is not None:
@@ -210,7 +205,7 @@ def run_training(model,
                     print('new best ({:.6f} --> {:.6f}). '.format(val_acc_max, val_avg_acc))
                     val_acc_max = val_avg_acc
                     b_new_best = True
-                    if args.rank == 0 and args.logdir is not None and args.save_checkpoint:
+                    if args.logdir is not None and args.save_checkpoint:
                         save_checkpoint(model, epoch, args,filename="model_best",
                                         best_acc=val_acc_max,
                                         optimizer=optimizer,

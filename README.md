@@ -9,7 +9,9 @@ I'm also build a model zoo of my own for reliable implementations of network whe
 
 This framework is built with [Pytorch](https://pytorch.org/), [MONAI](https://monai.io/index.html), and inspiration from Prof. Li's assignments.
 
+## TODO
 
+- Heritance shall be adopted in /dataset /main /trainer !! not elegant enough
 
 ## Installing Dependencies
 
