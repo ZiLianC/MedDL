@@ -15,6 +15,15 @@ def to_one_hot_3d_target(tensor, n_classes=2):  # shape = [batch, s, h, w]
     one_hot = one_hot.scatter_(1, tensor.view(n, 1, s, h, w), 1)
     return one_hot
 
+def classification_accuracy(logits,target):
+    logits=F.softmax(logits,dim=1)
+    for i in target.cpu().item():
+        y_val.append(i)
+    for i in logits.argmax(dim=1).cpu().item():
+        y_pred.append(i)
+    print(target.cpu().item())
+    print(logits.argmax(dim=1).cpu().item())
+
 class AverageMeter(object):
 
     def __init__(self):

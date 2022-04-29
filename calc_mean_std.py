@@ -8,7 +8,7 @@ img_h, img_w = 450, 600
 means, stdevs = [], []
 img_list = []
  
-imgs_path = './data/problem2_datas/images/'
+imgs_path = './data/problem3_datas/2/'
 imgs_path_list = os.listdir(imgs_path)
  
 len_ = len(imgs_path_list)

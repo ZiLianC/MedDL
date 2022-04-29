@@ -49,7 +49,7 @@ def train_epoch(model,
         features = model(images)
         f1, f2 = torch.split(features, [bsz, bsz], dim=0)
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-        loss = loss_con(features,target)
+        loss = loss_con(features)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()

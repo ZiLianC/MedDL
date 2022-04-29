@@ -14,6 +14,7 @@ from functools import partial
 from sklearn.metrics import accuracy_score
 from loss.supcon import SupConLoss
 import argparse
+from torchvision.models import convnext,resnet
 
 parser = argparse.ArgumentParser(description='Template pipeline')
 
@@ -70,7 +71,7 @@ def main_worker(gpu, args):
     args.test_mode = False
     
     # load dataset
-    trainloader,testloader = suploader.getcsvloader("./data/problem2_datas",8)
+    trainloader,testloader = suploader.getcsvloader("./data/problem2_datas",args.batch_size)
     '''trainloader = torch.utils.data.DataLoader(
   torchvision.datasets.MNIST('./data/', train=True, download=True,
                              transform=torchvision.transforms.Compose([
@@ -95,7 +96,10 @@ def main_worker(gpu, args):
     
 
     # DEFINE MODELS HERE.
-    model=ResNet50(3,7,use_feature=False)
+    #model=ResNet50(3,7,use_feature=False)
+    resnet.model_urls["resnet50"] = "https://download.pytorch.org/models/resnet50-11ad3fa6.pth"
+    model = resnet.resnet50(pretrained=True)
+    model.fc = nn.Linear(2048,7)
     #model=ConvNeXt(3,num_classes=7)
     #model=DenseNet121(spatial_dims=2, in_channels=3,
                    #out_channels=7)

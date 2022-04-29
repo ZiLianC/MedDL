@@ -46,8 +46,6 @@ def train_epoch(model,
             # training and loss calculation
         logits = model(images)
         loss = loss_func(logits,target)
-            #loss = loss_func(logits[2], target)+alpha*(loss_func(logits[1], target)+loss_func(logits[0], target))
-        # back propagation with cuda opt.
             # normal bp
         optimizer.zero_grad()
         loss.backward()
@@ -92,9 +90,12 @@ def val_epoch(model,
             torch.cuda.empty_cache()
             # calulate metric.
             logits=F.softmax(logits,dim=1)
-            y_val.append(target.cpu().item())
-            y_pred.append(logits.argmax(dim=1).cpu().item())
-            print(logits.argmax(dim=1).cpu().item())
+            ctarget=target.cpu().tolist()
+            for i in ctarget:
+              y_val.append(i)
+            clogits=logits.argmax(dim=1).cpu().tolist()
+            for i in clogits:
+              y_pred.append(i)
             torch.cuda.empty_cache()
             start_time = time.time()
         acc = acc_func(y_val,y_pred)

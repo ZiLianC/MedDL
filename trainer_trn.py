@@ -17,6 +17,7 @@ def train_epoch(model,
                 loader,
                 optimizer,
                 scaler,
+                acc_func,
                 epoch,
                 loss_func,
                 loss_con,
@@ -29,7 +30,9 @@ def train_epoch(model,
     # DS coeffis
     alpha = 0.4
     if epoch % 30 == 0: alpha *= 0.8
-    for idx, batch_data in tqdm(enumerate(loader)):
+    y_val=[]
+    y_pred=[]
+    for idx, batch_data in enumerate(loader):
         # clean cuda cached useless grad graph
         torch.cuda.empty_cache()
         # try batch_data is a list to select ways of loading. for compatibility
@@ -44,13 +47,18 @@ def train_epoch(model,
         # cuda opt
             # training and loss calculation
         logits = model(images)
+        #print(target)
         loss = loss_func(logits,target)
-            #loss = loss_func(logits[2], target)+alpha*(loss_func(logits[1], target)+loss_func(logits[0], target))
-        # back propagation with cuda opt.
-            # normal bp
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        logits=F.softmax(logits,dim=1)
+        ctarget=target.cpu().tolist()
+        for i in ctarget:
+            y_val.append(i)
+        clogits=logits.argmax(dim=1).cpu().tolist()
+        for i in clogits:
+            y_pred.append(i)
         run_loss.update(loss.item(), n=args.batch_size)
         # print data
         if args.rank == 0:
@@ -60,20 +68,22 @@ def train_epoch(model,
         torch.cuda.empty_cache()
         start_time = time.time()
     for param in model.parameters() : param.grad = None
-    
-    return run_loss.avg
+    acc = acc_func(y_val,y_pred)
+    return run_loss.avg,acc
 
 def val_epoch(model,
               loader,
               epoch,
               acc_func,
               args,
+              loss_func,
               model_inferer=None,
               post_label=None,
               post_pred=None):
     # evalution mode
     model.eval()
     start_time = time.time()
+    run_loss = AverageMeter()
     # standard evaluation paradigm
     with torch.no_grad():
         y_val=[]
@@ -89,16 +99,21 @@ def val_epoch(model,
             if not logits.is_cuda:
                 target = target.cpu()
             torch.cuda.empty_cache()
+            loss = loss_func(logits,target)
+            run_loss.update(loss.item(), n=args.batch_size)
             # calulate metric.
             logits=F.softmax(logits,dim=1)
-            y_val.append(target.cpu().item())
-            y_pred.append(logits.argmax(dim=1).cpu().item())
-            print(logits.argmax(dim=1).cpu().item())
+            ctarget=target.cpu().tolist()
+            for i in ctarget:
+              y_val.append(i)
+            clogits=logits.argmax(dim=1).cpu().tolist()
+            for i in clogits:
+              y_pred.append(i)
             torch.cuda.empty_cache()
             start_time = time.time()
         acc = acc_func(y_val,y_pred)
         print(acc)
-    return acc
+    return acc,run_loss.avg
 
 def save_checkpoint(model,
                     epoch,
@@ -158,9 +173,10 @@ def run_training(model,
         print(args.rank, time.ctime(), 'Epoch:', epoch)
         epoch_time = time.time()
         # training
-        train_loss = train_epoch(model,
+        train_loss,train_acc = train_epoch(model,
                                  train_loader,
                                  optimizer,
+                                 acc_func=acc_func,
                                  scaler=None,
                                  epoch=epoch,
                                  loss_func=loss_func,
@@ -173,6 +189,7 @@ def run_training(model,
         # write loss to tbx
         if args.rank==0 and writer is not None:
             writer.add_scalar('train_loss', train_loss, epoch)
+            writer.add_scalar('train_acc', train_acc, epoch)
         b_new_best = False
 
         # save model & weight in selected epochs.
@@ -187,10 +204,11 @@ def run_training(model,
         if (epoch+1) % args.val_every == 0:
             torch.cuda.empty_cache()
             epoch_time = time.time()
-            val_avg_acc = val_epoch(model,
+            val_avg_acc,val_avg_loss = val_epoch(model,
                                     val_loader,
                                     epoch=epoch,
                                     acc_func=acc_func,
+                                    loss_func=loss_func,
                                     model_inferer=model_inferer,
                                     args=args,
                                     post_label=post_label,
@@ -201,6 +219,7 @@ def run_training(model,
                       'acc', val_avg_acc, 'time {:.2f}s'.format(time.time() - epoch_time))
                 if writer is not None:
                     writer.add_scalar('val_acc', val_avg_acc, epoch)
+                    writer.add_scalar('val_loss', val_avg_loss, epoch)
                 if val_avg_acc > val_acc_max:
                     print('new best ({:.6f} --> {:.6f}). '.format(val_acc_max, val_avg_acc))
                     val_acc_max = val_avg_acc

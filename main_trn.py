@@ -70,7 +70,7 @@ def main_worker(gpu, args):
     args.test_mode = False
     
     # load dataset
-    trainloader,testloader = csvloader_trn.getcsvloader("./data/problem3_datas",16)
+    trainloader,testloader = csvloader_trn.getcsvloader("./data/problem3_datas",args.batch_size)
     '''trainloader = torch.utils.data.DataLoader(
   torchvision.datasets.MNIST('./data/', train=True, download=True,
                              transform=torchvision.transforms.Compose([
@@ -95,7 +95,7 @@ def main_worker(gpu, args):
     
 
     # DEFINE MODELS HERE.
-    model=TRN(in_channel=3,input_size=126,seq_size=3,class_num=7)
+    model=TRN(in_channel=3,input_size=256,seq_size=3,class_num=7)
     #model=ResNet50(3,7,use_feature=False)
     #model=ConvNeXt(3,num_classes=7)
     #model=DenseNet121(spatial_dims=2, in_channels=3,
@@ -105,7 +105,6 @@ def main_worker(gpu, args):
     #weight=[0.15,0.05,0.15,0.15,0.15,0.15,0.15]
     #weight=torch.tensor(weight,dtype=torch.float).cuda()
     bce_loss = nn.CrossEntropyLoss(label_smoothing=0.1)
-    #con_loss =SupConLoss(temperature=0.07)
                             
     # param number
     pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -119,12 +118,12 @@ def main_worker(gpu, args):
     model.cuda(args.gpu)
     
     # DEFINE OPTIMIZER HERE
-    optimizer = torch.optim.Adam(model.parameters(),
-                                     lr=args.optim_lr,weight_decay=2e-05)
-    '''optimizer=torch.optim.SGD(model.parameters(),
+    '''optimizer = torch.optim.Adam(model.parameters(),
+                                     lr=args.optim_lr,weight_decay=2e-05)'''
+    optimizer=torch.optim.SGD(model.parameters(),
                           lr=args.optim_lr,
                           momentum=0.9,
-                          weight_decay=1e-4)'''
+                          weight_decay=1e-4)
                                      
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer,T_max=args.max_epochs)
 

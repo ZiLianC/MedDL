@@ -29,7 +29,7 @@ class csvloader(torch.utils.data.Dataset):
                        transforms.Normalize(mean=[0.42361727, 0.22381866, 0.24462153],std=[0.2541053, 0.2311892, 0.23641701])
                    ])
         self.test_transforms = transforms.Compose([
-                        transforms.Resize([256,256]),
+                       transforms.Resize([256,256]),
                        transforms.ToTensor(),
                        transforms.Normalize(mean=[0.42361727, 0.22381866, 0.24462153],std=[0.2541053, 0.2311892, 0.23641701])
                    ])
@@ -43,19 +43,12 @@ class csvloader(torch.utils.data.Dataset):
             return len(self.test_label_list)
 
     def __getitem__(self, index):
-        img=[]
         if self.split=='train' :
-            for i in range(3):
-                img.append(self.train_transforms(read_img(os.path.join(self.path,self.train_img_list[(index+i)%len(self.train_img_list)]))))
-                img[i]=torch.unsqueeze(img[i],dim=0)
-            image=torch.cat([img[0], img[1],img[2]], dim=0)
-            return image,self.train_label_list[(index+2)%len(self.train_img_list)]
+            img=self.train_transforms(read_img(os.path.join(self.path,self.train_img_list[index])))
+            return img,self.train_label_list[index]
         else:
-            for i in range(3):
-                img.append(self.test_transforms(read_img(os.path.join(self.path,self.test_img_list[(index+i)%len(self.test_img_list)]))))
-                img[i]=torch.unsqueeze(img[i],dim=0)
-            image=torch.cat([img[0], img[1],img[2]], dim=0)
-            return image,self.test_label_list[(index+2)%len(self.test_img_list)]
+            img=self.test_transforms(read_img(os.path.join(self.path,self.test_img_list[index])))
+            return img,self.test_label_list[index]
 
 
     def load_all_file(self,dir_path):
