@@ -4,10 +4,11 @@ import torch
 import torch.nn as nn
 import torchvision
 from monai.metrics import DiceMetric
-from dataset import csvloader_n
+from dataset import csvloader
 from modelzoo.classification.ResNet50 import ResNet50
 from modelzoo.classification.ConvNeXt import ConvNeXt
 from monai.networks.nets import DenseNet121
+from loss.ContrasiveLoss import ContrastiveLoss
 from torchvision.models import convnext,resnet
 from trainer_class import run_training
 from scheduler.warmup_cosineannealing import warmup_CosineAnnealing
@@ -75,8 +76,8 @@ def main_worker(gpu, args):
     args.test_mode = False
     
     # load dataset
-    #trainloader,testloader = csvloader.getcsvloader("./data/problem2_datas",args.batch_size)
-    trainloader,testloader = csvloader_n.getcsvloader("./data/problem3_datas",args.batch_size)
+    trainloader,testloader = csvloader.getcsvloader("./data/problem2_datas",args.batch_size)
+    #trainloader,testloader = csvloader_n.getcsvloader("./data/problem3_datas",args.batch_size)
     '''trainloader = torch.utils.data.DataLoader(
   torchvision.datasets.MNIST('./data/', train=True, download=True,
                              transform=torchvision.transforms.Compose([
@@ -109,11 +110,10 @@ def main_worker(gpu, args):
     #model=DenseNet121(spatial_dims=2, in_channels=3,
                    #out_channels=7)
     # DEFINE LOSS FUNC HERE.
-    # using dice_loss+cross entrophy for loss function
-    #weight=[0.15,0.05,0.15,0.15,0.15,0.15,0.15]
-    #weight=torch.tensor(weight,dtype=torch.float).cuda()
-    bce_loss = nn.CrossEntropyLoss(label_smoothing=0.1)
-    #con_loss =SupConLoss(temperature=0.07)
+    weight=[0.15,0.05,0.15,0.15,0.15,0.15,0.15]
+    weight=torch.tensor(weight,dtype=torch.float).cuda()
+    bce_loss = nn.CrossEntropyLoss(weight=weight,label_smoothing=0.1)
+    con_loss =ContrastiveLoss(temperature=0.5,batch_size=args.batch_size)
                             
     # param number
     pytorch_total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -142,7 +142,7 @@ def main_worker(gpu, args):
                             val_loader=testloader,
                             optimizer=optimizer,
                             loss_func=bce_loss,
-                            loss_con= None,
+                            loss_con= con_loss,
                             acc_func=accuracy_score,
                             args=args,
                             model_inferer=None,

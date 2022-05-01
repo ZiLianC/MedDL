@@ -48,7 +48,6 @@ def train_epoch(model,
         # back propagation with cuda opt.
         if args.amp:
             scaler.scale(loss).backward()
-            print("bped")
             scaler.step(optimizer)
             scaler.update()
         else:
@@ -81,6 +80,9 @@ def val_epoch(model,
               loader,
               epoch,
               acc_func,
+              jacc,
+              asd,
+              HD,
               args,
               model_inferer=None,
               post_label=None,
@@ -88,6 +90,7 @@ def val_epoch(model,
     # evalution mode
     model.eval()
     start_time = time.time()
+    avg_acc=[0]*4
     # standard evaluation paradigm
     with torch.no_grad():
         for idx, batch_data in enumerate(loader):
@@ -106,39 +109,44 @@ def val_epoch(model,
                 target = target.cpu()
             torch.cuda.empty_cache()
             # calulate metric.
-            print(logits.shape)
-            print(target.shape)
-            print(data.shape)
             val_outputs = torch.softmax(logits, 1).cpu().numpy()
             val_outputs = np.argmax(val_outputs, axis=1).astype(np.uint8)
             val_labels = target.cpu().numpy()[:, 0, :, :, :]
             logits=torch.from_numpy(val_outputs).cuda()
             target=torch.from_numpy(val_labels).cuda()
             print("1")
-            print(logits.shape)
-            print("2")
-            print(target.shape)
-            print("-----")
             acc = acc_func(y_pred=logits, y=target)
             acc = acc.cuda(args.rank)
-
-            # collect
-            if args.distributed:
-                acc_list = distributed_all_gather([acc],
-                                                  out_numpy=True,
-                                                  is_valid=idx < loader.sampler.valid_length)
-                avg_acc = np.mean([np.nanmean(l) for l in acc_list])
-
-            else:
-                # calculate ave. metric
-                acc_list = acc.detach().cpu().numpy()
-                avg_acc = np.mean([np.nanmean(l) for l in acc_list])
+            # calculate ave. metric
+            acc_list = acc.detach().cpu().numpy()
+            avg_acc[0] = np.mean([np.nanmean(l) for l in acc_list])
+            #target=torch.tensor(target,dtype=torch.int64).cuda()
+            #target=Variable(target)
+            print("2")
+            acc = jacc(logits.cpu(), target.cpu())
+            acc = acc.cuda(args.rank)
+            # calculate jaccard. metric
+            acc_list = acc.detach().cpu().item()
+            avg_acc[1] = acc_list
+            print("3")
+            acc = asd(y_pred=logits, y=target)
+            acc = acc.cuda(args.rank)
+            # calculate asd. metric
+            acc_list = acc.detach().cpu().numpy()
+            avg_acc[2] = np.mean([np.nanmean(l) for l in acc_list])
+            print("4")
+            acc = HD(y_pred=logits, y=target)
+            acc = acc.cuda(args.rank)
+            # calculate 95hd. metric
+            acc_list = acc.detach().cpu().numpy()
+            avg_acc[3] = np.mean([np.nanmean(l) for l in acc_list])
 
             if args.rank == 0:
                 print('Val {}/{} {}/{}'.format(epoch, args.max_epochs, idx, len(loader)),
                       'acc', avg_acc)
             torch.cuda.empty_cache()
             start_time = time.time()
+            print(avg_acc)
     return avg_acc
 
 def save_checkpoint(model,
@@ -239,7 +247,10 @@ def run_training(model,
             val_avg_acc = val_epoch(model,
                                     val_loader,
                                     epoch=epoch,
-                                    acc_func=acc_func,
+                                    acc_func=acc_func[0],
+                                    jacc=acc_func[1],
+                                    asd=acc_func[2],
+                                    HD=acc_func[3],
                                     model_inferer=model_inferer,
                                     args=args,
                                     post_label=post_label,
@@ -249,10 +260,13 @@ def run_training(model,
                 print('Final validation  {}/{}'.format(epoch, args.max_epochs - 1),
                       'acc', val_avg_acc, 'time {:.2f}s'.format(time.time() - epoch_time))
                 if writer is not None:
-                    writer.add_scalar('val_acc', val_avg_acc, epoch)
-                if val_avg_acc > val_acc_max:
-                    print('new best ({:.6f} --> {:.6f}). '.format(val_acc_max, val_avg_acc))
-                    val_acc_max = val_avg_acc
+                    writer.add_scalar('val_dice', val_avg_acc[0], epoch)
+                    writer.add_scalar('val_jaccard', val_avg_acc[1], epoch)
+                    writer.add_scalar('val_asd', val_avg_acc[2], epoch)
+                    writer.add_scalar('val_95HD', val_avg_acc[3], epoch)
+                if val_avg_acc[0] > val_acc_max:
+                    print('new best ({:.6f} --> {:.6f}). '.format(val_acc_max, val_avg_acc[0]))
+                    val_acc_max = val_avg_acc[0]
                     b_new_best = True
                     if args.rank == 0 and args.logdir is not None and args.save_checkpoint:
                         save_checkpoint(model, epoch, args,filename="model_best",

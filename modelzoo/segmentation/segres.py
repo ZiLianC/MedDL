@@ -183,7 +183,7 @@ if __name__ =='__main__':
             in_channels=1,
             out_channels=2,
             upsample_mode="deconv",
-            using_features=True).to(device)
+            using_features=False).to(device)
     dummy=torch.randn(1, 1, 96, 96,96).float().to(device)
     up=model(dummy) # up_feature(32,24x3) (16,48x3) (8,96x3)
     print("up")

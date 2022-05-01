@@ -10,7 +10,8 @@ from monai.transforms import Compose
 from monai.losses import DiceLoss, DiceCELoss
 from monai.utils.enums import MetricReduction
 from monai.transforms import AsDiscrete,Activations,Compose
-from monai.metrics import DiceMetric
+from monai.metrics import DiceMetric,HausdorffDistanceMetric,SurfaceDistanceMetric
+from torchmetrics import JaccardIndex
 from dataset import h5Loader
 from modelzoo.segmentation.segres import SegResNet
 from trainer import run_training
@@ -38,9 +39,9 @@ parser.add_argument('--max_epochs', default=5000, type=int, help='max number of 
 parser.add_argument('--batch_size', default=2, type=int, help='number of batch size')
 parser.add_argument('--sw_batch_size', default=1, type=int, help='number of sliding window batch size')
 parser.add_argument('--val_every', default=10, type=int, help='validation frequency')
-parser.add_argument('--roi_x', default=96, type=int, help='roi size in x direction')
-parser.add_argument('--roi_y', default=96, type=int, help='roi size in y direction')
-parser.add_argument('--roi_z', default=96, type=int, help='roi size in z direction')
+parser.add_argument('--roi_x', default=48, type=int, help='roi size in x direction')
+parser.add_argument('--roi_y', default=48, type=int, help='roi size in y direction')
+parser.add_argument('--roi_z', default=48, type=int, help='roi size in z direction')
 
 # cuda optimazation
 parser.add_argument('--noamp', action='store_true', help='do NOT use amp for training')
@@ -129,7 +130,7 @@ def main_worker(gpu, args):
     args.test_mode = False
     
     # load dataset
-    trainloader,testloader = h5Loader.geth5loader("./data/problem1_datas",4)
+    trainloader,testloader = h5Loader.geth5loader("./data/problem1_datas",args.batch_size)
     print(args.rank, ' gpu', args.gpu)
     
     # print batchsize
@@ -170,9 +171,16 @@ def main_worker(gpu, args):
     post_label = AsDiscrete(to_onehot=2)
     post_pred = AsDiscrete(argmax=True,
                            to_onehot=2)
-    dice_acc = DiceMetric(include_background=True,
+    acc_func=[]
+    acc_func.append(DiceMetric(include_background=True,
                           reduction=MetricReduction.MEAN,
-                          get_not_nans=True)
+                          get_not_nans=True))
+    acc_func.append(JaccardIndex(num_classes=2))
+    acc_func.append(SurfaceDistanceMetric(include_background=True,
+                          reduction=MetricReduction.MEAN,
+                          get_not_nans=True))
+    acc_func.append(HausdorffDistanceMetric(include_background=True, distance_metric='euclidean', percentile=95, directed=False, reduction=MetricReduction.MEAN, get_not_nans=True))
+    
     
     #using sliding window inference for memory efficient inference
     model_inferer = partial(sliding_window_inference,
@@ -230,7 +238,7 @@ def main_worker(gpu, args):
                             val_loader=testloader,
                             optimizer=optimizer,
                             loss_func=dice_loss,
-                            acc_func=dice_acc,
+                            acc_func=acc_func,
                             args=args,
                             model_inferer=model_inferer,
                             scheduler=scheduler,

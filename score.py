@@ -6,22 +6,19 @@ import os
 import torch
 import numpy as np
 from monai.inferers import sliding_window_inference
-from utils.data_utils import get_loader
+
 import argparse
 import os
 import time
 import numpy as np
 import torch
 import torch.nn.parallel
-import torch.utils.data.distributed
-import torch
-import torch.nn.parallel
+import torch.distributed as dist
 import torch.utils.data.distributed
 from monai.inferers import sliding_window_inference
-from utils.data_utils import get_loader
-from utils.valid_utils import dice
+from dataset import h5Loader
 from utils.visualization import print_cut_samples,print_heatmap
-from utils.slide_saliency_inference import sliding_saliency_inference
+
 from monai.inferers import SaliencyInferer
 
 parser = argparse.ArgumentParser(description='UNETR segmentation pipeline')
@@ -47,9 +44,9 @@ parser.add_argument('--b_max', default=1.0, type=float, help='b_max in ScaleInte
 parser.add_argument('--space_x', default=5, type=float, help='spacing in x direction')
 parser.add_argument('--space_y', default=5, type=float, help='spacing in y direction')
 parser.add_argument('--space_z', default=5, type=float, help='spacing in z direction')
-parser.add_argument('--roi_x', default=96, type=int, help='roi size in x direction')
-parser.add_argument('--roi_y', default=96, type=int, help='roi size in y direction')
-parser.add_argument('--roi_z', default=96, type=int, help='roi size in z direction')
+parser.add_argument('--roi_x', default=48, type=int, help='roi size in x direction')
+parser.add_argument('--roi_y', default=48, type=int, help='roi size in y direction')
+parser.add_argument('--roi_z', default=48, type=int, help='roi size in z direction')
 parser.add_argument('--dropout_rate', default=0.0, type=float, help='dropout rate')
 parser.add_argument('--distributed', action='store_true', help='start distributed training')
 parser.add_argument('--workers', default=4, type=int, help='number of workers')
@@ -72,7 +69,7 @@ def main():
     # enable test mode
     args.test_mode = True
     # load data
-    val_loader = get_loader(args)
+    trainloader,valloader = h5Loader.geth5loader("./data/problem1_datas",1)
     # load device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     # load model
@@ -116,18 +113,23 @@ def main():
     with torch.no_grad():
         dice_list_case = []
         asd_list_case = []
-        for i, batch in enumerate(val_loader):
+        for i, batch in enumerate(valloader):
             torch.cuda.empty_cache()
-            val_inputs, val_labels = (batch["image"].cuda(), batch["label"].cuda())
-            img_name = batch['image_meta_dict']['filename_or_obj'][0].split('/')[-1]
+            val_inputs, val_labels = batch
+            val_inputs=val_inputs.cuda()
+            val_labels=val_labels.cuda()
+            img_name = i
             print("Inference on case {}".format(img_name))
             # sliding windows inference
             torch.cuda.empty_cache()
             val_outputs = sliding_window_inference(val_inputs,
-                                                   (96, 96, 96),
+                                                   (48, 48, 48),
                                                    4,
                                                    model,
                                                    overlap=args.infer_overlap)
+            path=str(i)+args.pretrained_model_name.split(".")[0]
+            print(path)
+            print_cut_samples(val_inputs,val_labels,val_outputs,path)
             val_labels_list = decollate_batch(val_labels)
             val_labels_convert = [post_label(val_label_tensor) for val_label_tensor in val_labels_list]
             val_outputs_list = decollate_batch(val_outputs)

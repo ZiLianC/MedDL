@@ -26,7 +26,7 @@ class LAHeart(torch.utils.data.Dataset):
                 spatial_size=(48, 48, 48),
                 pos=1,
                 neg=1,
-                num_samples=4,
+                num_samples=16,
                 image_key="image",
                 image_threshold=0,
             ),
